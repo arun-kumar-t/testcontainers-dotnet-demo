@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./tests/IntegrationTests/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    command: /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+    restart: unless-stopped
+
+  fake-device:
+    build:
+      context: ./tests/IntegrationTests/FakeDevice
+      dockerfile: Dockerfile
+    ports:
+      - "5005:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  device-ingestor:
+    build:
+      context: .
+      dockerfile: DeviceIngestor/Dockerfile
+    ports:
+      - "5002:8080"
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - Mqtt__Host=mqtt
+      - Mqtt__Port=1883
+      - Mqtt__Topic=iot/telemetry
+      - Sse__Url=http://fake-device:3000/events
+    depends_on:
+      mqtt:
+        condition: service_started
+      fake-device:
+        condition: service_healthy
+    restart: unless-stopped
+
+  telemetry-writer:
+    build:
+      context: .
+      dockerfile: TelemetryWriter/Dockerfile
+    ports:
+      - "5001:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - Mqtt__Host=mqtt
+      - Mqtt__Port=1883
+      - Mqtt__Topic=iot/telemetry
+      - Output__Directory=/app/data
+    depends_on:
+      mqtt:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+

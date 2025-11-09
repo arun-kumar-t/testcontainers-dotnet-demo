@@ -1,0 +1,37 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.log
+
+## Visual Studio
+.vs/
+*.userprefs
+
+## Rider
+.idea/
+
+## VS Code
+.vscode/
+
+## Data directory
+data/
+
+## Test results and coverage
+TestResults/
+*.trx
+coverage.cobertura.xml
+
+## Keep appsettings.json files (they're configuration, not secrets)
+!**/appsettings.json
+
+## Docker
+.dockerignore
+
+CoverageReport/
+

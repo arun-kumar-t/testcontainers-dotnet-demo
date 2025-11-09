@@ -1,0 +1,95 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  integration-tests:
+    name: Integration Tests (Testcontainers)
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+    
+    services:
+      # Docker service is required for Testcontainers
+      docker:
+        image: docker:dind
+        options: >-
+          --privileged
+          --health-cmd "docker ps"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify Docker is running
+        run: |
+          docker ps
+          echo "Docker is ready for Testcontainers"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build --no-restore -c Release
+
+      - name: Run integration tests
+        run: |
+          echo "Running integration tests with Testcontainers..."
+          echo "Testcontainers will automatically start MQTT and fake device containers"
+          
+          dotnet test tests/IntegrationTests/IntegrationTests/IntegrationTests.csproj \
+            --no-build \
+            --configuration Release \
+            --verbosity normal \
+            --logger "trx;LogFileName=integration-test-results.trx" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory:"./TestResults"
+
+      - name: Generate coverage report
+        if: always()
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool || true
+          
+          COVERAGE_FILES=$(find TestResults -name "coverage.cobertura.xml" | tr '\n' ';')
+          
+          if [ -n "$COVERAGE_FILES" ]; then
+            reportgenerator \
+              -reports:"$COVERAGE_FILES" \
+              -targetdir:"CoverageReport" \
+              -reporttypes:"Html;TextSummary" \
+              -classfilters:"-*Tests*"
+            
+            cat CoverageReport/Summary.txt || true
+          fi
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-coverage
+          path: CoverageReport/
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: |
+            TestResults/**/*.trx
+          check_name: Integration Test Results
+
